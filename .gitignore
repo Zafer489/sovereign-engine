@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+hedefler.txt
+supheliler.txt
+hedef*.txt
+*.json
+test_*.py
+arsiv/
+FORENSICS/
+*.json
+*.md
+*.tar.gz
+*.txt
