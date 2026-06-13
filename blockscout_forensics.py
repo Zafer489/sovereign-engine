@@ -643,3 +643,93 @@ def risk_v2(address, chain="ETH"):
         "bayraklar": flags,
         "detay": detay
     }
+
+def etherscan_analyze(address):
+    """Etherscan V2 ile derin ETH analizi"""
+    import requests, re
+    from datetime import datetime, timezone
+
+    key = open('/data/data/com.termux/files/home/.env_keys').read()
+    k = re.search('ETHERSCAN_KEY=(.*)', key).group(1).strip()
+
+    def es(module, action, extra={}):
+        r = requests.get('https://api.etherscan.io/v2/api', params={
+            'chainid': '1', 'module': module,
+            'action': action, 'address': address,
+            'apikey': k, **extra
+        }, timeout=10)
+        return r.json()
+
+    print(f"\n[ETHERSCAN] {address[:20]}...")
+    flags = []
+    skor = 0
+
+    # Bakiye
+    bal = es('account', 'balance', {'tag': 'latest'})
+    eth = int(bal.get('result', 0)) / 1e18
+    print(f"  Bakiye    : {eth:.6f} ETH")
+
+    # Normal tx
+    txs = es('account', 'txlist', {'startblock': 0, 'endblock': 99999999, 'sort': 'asc', 'page': 1, 'offset': 100})
+    tx_list = txs.get('result', [])
+
+    if isinstance(tx_list, list) and len(tx_list) > 0:
+        print(f"  Tx sayısı : {len(tx_list)}")
+        first_ts = int(tx_list[0]['timeStamp'])
+        last_ts = int(tx_list[-1]['timeStamp'])
+        first_date = datetime.fromtimestamp(first_ts, timezone.utc).strftime('%Y-%m-%d')
+        last_date = datetime.fromtimestamp(last_ts, timezone.utc).strftime('%Y-%m-%d')
+        print(f"  İlk tx    : {first_date}")
+        print(f"  Son tx    : {last_date}")
+
+        # Dormant kontrolü
+        gun = (last_ts - first_ts) / 86400
+        if gun > 365:
+            flags.append("UZUN_SURELI_AKTIF")
+            skor += 5
+
+        # Hızlı transfer
+        hizli = 0
+        for i in range(len(tx_list) - 1):
+            sure = int(tx_list[i+1]['timeStamp']) - int(tx_list[i]['timeStamp'])
+            if sure < 600:
+                hizli += 1
+        if hizli > 3:
+            flags.append("HIZLI_TRANSFER")
+            skor += 25
+            print(f"  ⚠️ Hızlı transfer: {hizli} adet")
+
+        # Gelen/giden
+        gelen = [t for t in tx_list if t['to'].lower() == address.lower()]
+        giden = [t for t in tx_list if t['from'].lower() == address.lower()]
+        print(f"  Gelen/Giden: {len(gelen)}/{len(giden)}")
+        if len(gelen) == 0 and len(giden) > 0:
+            flags.append("SADECE_GIDEN"); skor += 20
+
+    # Internal tx
+    itxs = es('account', 'txlistinternal', {'page': 1, 'offset': 50})
+    i_list = itxs.get('result', [])
+    if isinstance(i_list, list):
+        print(f"  Internal  : {len(i_list)} tx")
+
+    # ERC20 transferler
+    tokens = es('account', 'tokentx', {'page': 1, 'offset': 50})
+    t_list = tokens.get('result', [])
+    if isinstance(t_list, list):
+        token_symbols = set(t['tokenSymbol'] for t in t_list)
+        print(f"  Tokenlar  : {', '.join(list(token_symbols)[:5])}")
+
+    skor = min(skor, 100)
+    seviye = ("KRİTİK 🔴" if skor >= 70 else
+              "YÜKSEK 🟠" if skor >= 50 else
+              "ORTA 🟡"   if skor >= 30 else "DÜŞÜK 🟢")
+
+    print(f"  Risk      : {skor}/100 — {seviye}")
+    if flags:
+        print(f"  Bayraklar : {', '.join(flags)}")
+
+    return {
+        "adres": address, "bakiye_eth": round(eth, 6),
+        "tx_sayisi": len(tx_list) if isinstance(tx_list, list) else 0,
+        "risk_skoru": skor, "risk_seviyesi": seviye, "bayraklar": flags
+    }
