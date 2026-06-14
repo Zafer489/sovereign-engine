@@ -11,3 +11,5 @@ FORENSICS/
 *.md
 *.tar.gz
 *.txt
+.env_keys
+.env_kes*
