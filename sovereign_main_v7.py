@@ -47,10 +47,12 @@ class ActiveFriction:
 def stage_1_trigger_detection(ctx: CaseContext) -> dict:
     """
     blockscout_forensics.risk_v2 ile risk skoru hesaplar,
-    deep_dormant_analysis ile dormant/uyanış paternini loglar (yan bilgi).
+    deep_dormant_analysis ile dormant/uyanış paternini loglar (yan bilgi),
+    randstorm_riski ile RNG zafiyeti riskini ekler.
     """
     from blockscout_forensics import risk_v2
     from deep_dormant import deep_dormant_analysis
+    from sovereign_randstorm_scorer import randstorm_riski
 
     result = risk_v2(ctx.seed_address, chain=ctx.chain)
     if "error" in result:
@@ -58,6 +60,11 @@ def stage_1_trigger_detection(ctx: CaseContext) -> dict:
 
     if ctx.chain == "BTC":
         deep_dormant_analysis(ctx.seed_address)
+
+    randstorm = randstorm_riski(ctx.seed_address, chain=ctx.chain)
+    result["randstorm"] = randstorm
+    if randstorm.get("randstorm_donemi_icinde"):
+        result["risk_skoru"] = min(100, result.get("risk_skoru", 0) + randstorm["risk_katkisi"])
 
     return result
 
